@@ -316,6 +316,8 @@ fn read_cache_entry(cache: tauri::State<'_, PersistentCache>, key: String) -> Re
 
 #[tauri::command]
 fn delete_cache_entry(cache: tauri::State<'_, PersistentCache>, key: String) -> Result<(), String> {
+    // Serialize deletes with writes so dirty flag updates cannot be clobbered.
+    let _write_guard = cache.write_lock.lock().unwrap_or_else(|e| e.into_inner());
     {
         let mut data = cache.data.lock().unwrap_or_else(|e| e.into_inner());
         data.remove(&key);

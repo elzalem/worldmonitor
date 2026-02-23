@@ -50,6 +50,7 @@ export class CircuitBreaker<T> {
   private persistEnabled: boolean;
   private persistentLoaded = false;
   private persistentLoadPromise: Promise<void> | null = null;
+  private hydrateEpoch = 0;
   private lastDataState: BreakerDataState = { mode: 'unavailable', timestamp: null, offline: false };
 
   constructor(options: CircuitBreakerOptions) {
@@ -70,6 +71,7 @@ export class CircuitBreaker<T> {
   private hydratePersistentCache(): Promise<void> {
     if (this.persistentLoaded) return Promise.resolve();
     if (this.persistentLoadPromise) return this.persistentLoadPromise;
+    const hydrateEpoch = this.hydrateEpoch;
 
     this.persistentLoadPromise = (async () => {
       try {
@@ -79,6 +81,9 @@ export class CircuitBreaker<T> {
 
         const age = Date.now() - entry.updatedAt;
         if (age > PERSISTENT_STALE_CEILING_MS) return;
+
+        // Ignore stale hydration that started before clearCache().
+        if (hydrateEpoch !== this.hydrateEpoch) return;
 
         // Only hydrate if in-memory cache is empty (don't overwrite live data)
         if (this.cache === null) {
@@ -168,6 +173,8 @@ export class CircuitBreaker<T> {
 
   clearCache(): void {
     this.cache = null;
+    this.hydrateEpoch++;
+    this.persistentLoaded = true; // Explicit clear should never rehydrate stale persisted data.
     this.persistentLoadPromise = null; // orphan any in-flight hydration
     if (this.persistEnabled) {
       this.deletePersistentCache();
